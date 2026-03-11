@@ -226,18 +226,50 @@ pkill -9 slurmctld 2>/dev/null
 sleep 1
 ```
 
-#### 6.2 启动 slurmd（计算节点）
+#### 6.2 启动 slurmd（计算节点，以 root 身份）
 
 ```bash
+# 以 root 用户启动 slurmd
+# -D 参数表示前台调试模式运行，方便查看日志
 nohup /usr/sbin/slurmd -D > /var/log/slurm/slurmd.log 2>&1 &
 sleep 2
 ```
 
-#### 6.3 启动 slurmctld（控制器）
+**说明：**
+- `nohup ... &` 后台运行，关闭终端也能继续运行
+- `-D` 参数让 slurmd 以前台模式运行，方便调试
+- 日志输出到 `/var/log/slurm/slurmd.log`
+
+#### 6.3 启动 slurmctld（控制器，以 root 身份）
 
 ```bash
+# 以 root 用户启动 slurmctld
+# -D 参数表示前台调试模式运行
 nohup /usr/sbin/slurmctld -D > /var/log/slurm/slurmctld.log 2>&1 &
 sleep 3
+```
+
+**说明：**
+- slurmctld 是 Slurm 控制器，负责作业调度
+- 需要在 slurmd 启动后再启动
+- 使用 root 身份是因为容器环境配置了 `SlurmUser=root` 和 `SlurmdUser=root`
+
+#### 6.4 为什么用 nohup？
+
+| 原因 | 说明 |
+|------|------|
+| 容器无 systemd | RunPod 容器的 PID 1 是 docker-init，不是 systemd，无法用 systemctl |
+| 保持运行 | nohup 保证关闭终端后进程继续运行 |
+| 日志持久化 | 输出重定向到日志文件，方便排查问题 |
+| 后台执行 | `&` 让进程在后台运行 |
+
+**如果不用 nohup：**
+```bash
+# 错误方式（关闭终端后进程会终止）
+/usr/sbin/slurmd -D
+
+# 正确方式
+nohup /usr/sbin/slurmd -D > /var/log/slurm/slurmd.log 2>&1 &
 ```
 
 #### 6.4 验证 Slurm 服务状态
