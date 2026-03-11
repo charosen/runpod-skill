@@ -599,14 +599,85 @@ pkill -9 slurmctld
 
 ---
 
-## 关键经验
+## 常见问题汇总
+
+### 10.1 服务启动问题
+
+| 报错 | 原因 | 解决方案 |
+|------|------|----------|
+| `System has not been booted with systemd as init system (PID 1)` | 容器无 systemd | 使用 nohup 手动启动 |
+| `Failed to connect to bus: Host is down` | 同上 | 同上 |
+| `create-munge-key: command not found` | 命令不在 PATH | 直接手动生成密钥 |
+| `Failed to check socket dir "/run/munge"` | /run/munge 不存在 | `mkdir -p /run/munge && chown munge:munge /run/munge` |
+| `cannot change directory to /nonexistent` | 用户 home 目录不存在 | `usermod -d /var/lib/slurm slurm` |
+| `Logfile is insecure: invalid ownership` | 密钥/日志权限问题 | 检查权限 |
+
+### 10.2 配置问题
+
+| 报错 | 原因 | 解决方案 |
+|------|------|----------|
+| `ClusterName needs to be specified` | 缺少 ClusterName | 添加 `ClusterName=localhost` |
+| `Parsing error at unrecognized key: LogFile` | 配置名错误 | 用 `SlurmctldLogFile` 和 `SlurmdLogFile` |
+| `Node configuration differs from hardware: CPUs=8:64` | CPU配置与实际不符 | 根据实际硬件填写 |
+| `Invalid PrologFlag: NOContain` | PrologFlags 无此选项 | 删除 PrologFlags 行 |
+| `Duplicated NodeHostName` | gres 配置格式错误 | gres 写在同一行 |
+
+### 10.3 节点状态问题
+
+| 报错 | 原因 | 解决方案 |
+|------|------|----------|
+| `gres/gpu count reported lower than configured (0 < 1)` | GPU 检测不到 | 去掉 gres 配置 |
+| `cgroup namespace 'freezer' not mounted` | 容器无 cgroup | 使用 `ProctrackType=proctrack/linuxproc` |
+| 节点 drain | 节点被排空 | `scontrol update NodeName=localhost State=IDLE` |
+| 节点 inval | 配置无效 | 检查 slurm.conf |
+
+### 10.4 任务问题
+
+| 报错 | 原因 | 解决方案 |
+|------|------|----------|
+| `Nodes required for job are DOWN, DRAINED` | 节点不可用 | 检查节点状态 |
+| 任务一直 PD | 节点不接收任务 | 检查节点是否 drain |
+
+---
+
+## 关键经验总结
 
 1. **MUNGE 以 munge 用户运行**
-2. **Slurm 以 root 用户运行**（SlurmUser=root, SlurmdUser=root）
-3. **容器用 ProctrackType=proctrack/linuxproc**
+   - 使用 `su - munge -s /bin/bash -c "/usr/sbin/munged"` 启动
+   - 确保 `/run/munge` 目录存在并权限正确
+
+2. **Slurm 以 root 用户运行**
+   - 配置 `SlurmUser=root` 和 `SlurmdUser=root`
+   - 使用 nohup 后台启动
+
+3. **容器环境使用 ProctrackType=proctrack/linuxproc**
+   - 不要使用 cgroup，容器不支持
+   - 会报错：`cgroup namespace 'freezer' not mounted`
+
 4. **不配置 gres，GPU 通过 CUDA_VISIBLE_DEVICES 指定**
+   - 容器 GPU 设备是只读的
+   - Slurm 无法直接管理 GPU
+   - 任务脚本中手动指定：`export CUDA_VISIBLE_DEVICES=0`
+
 5. **日志配置名是 SlurmctldLogFile 和 SlurmdLogFile**
+   - 错误写法：`LogFile`（会导致报错）
+   - 正确写法：`SlurmctldLogFile` 和 `SlurmdLogFile`
+
 6. **PrologFlags 在容器环境不要使用**
+   - 删除或注释掉 PrologFlags 行
+   - 使用会报错：`Invalid PrologFlag: NOContain`
+
+7. **节点 drain 时用 scontrol update 恢复**
+   - `scontrol update NodeName=localhost State=IDLE`
+
+8. **必须预先创建日志文件并设置权限**
+   - `touch /var/log/slurm/slurmctld.log`
+   - `chown slurm:slurm /var/log/slurm/*.log`
+
+9. **所有目录必须对运行用户有写权限**
+   - `/var/spool/slurm/ctld`
+   - `/var/spool/slurm/d`
+   - `/var/log/slurm`
 
 ---
 
