@@ -307,74 +307,271 @@ sinfo
 
 ---
 
-## sinfo 命令
+## sinfo 命令详解
 
-### 输出格式
+`sinfo` 用于查看集群/分区和节点状态。
+
+### 7.1 基本用法
+
+```bash
+sinfo              # 查看所有分区
+sinfo -N          # 按节点显示（简洁）
+sinfo -l           # 详细显示
+sinfo -p gpu       # 查看特定分区
+sinfo -o "%.10N %.6t"  # 自定义格式
+```
+
+### 7.2 输出格式
+
 ```
 PARTITION  AVAIL  TIMELIMIT  NODES  STATE   NODELIST
 gpu*       up    infinite   1      idle    localhost
 ```
 
-### 字段说明
+### 7.3 字段说明
+
 | 字段 | 说明 |
 |------|------|
-| PARTITION | 分区名（队列名） |
+| PARTITION | 分区名（队列名），如 gpu, batch, default |
 | AVAIL | 可用状态：up=可用, down=不可用 |
-| TIMELIMIT | 最大运行时间 |
+| TIMELIMIT | 最大运行时间，infinite=无限制 |
 | NODES | 节点数量 |
 | STATE | 节点状态 |
 | NODELIST | 节点列表 |
 
-### 状态说明
-| 状态 | 含义 |
-|------|------|
-| idle | 空闲，可接收任务 ✅ |
-| allocated | 运行中 ✅ |
-| drain | 被排除 ⚠️ |
-| down | 下线 🔴 |
-| inval | 无效 🔴 |
+### 7.4 状态说明
+
+| 状态 | 含义 | 严重程度 |
+|------|------|----------|
+| `idle` | 空闲，可接收任务 | ✅ 正常 |
+| `allocated` | 正在运行任务 | ✅ 正常 |
+| `mixed` | 部分CPU已分配 | ✅ 正常 |
+| `drain` | 节点被排除，不接收新任务 | ⚠️ 需要修复 |
+| `draining` | 正在排空现有任务 | ⚠️ 正在退出 |
+| `down` | 节点下线 | 🔴 严重 |
+| `inval` | 节点配置无效 | 🔴 严重 |
+| `unknown` | 状态未知 | ⚠️ 待确认 |
+
+### 7.5 状态组合
+
+节点状态可能组合出现：
+- `IDLE+DRAIN` - 空闲但被排空
+- `IDLE+DRAIN+INVALID_REG` - 空闲但注册无效
+- `DOWN*` - 节点已下线
+
+### 7.6 常用示例
+
+```bash
+# 查看所有节点
+sinfo
+
+# 只看 gpu 分区
+sinfo -p gpu
+
+# 详细模式
+sinfo -l
+
+# 只看节点名和状态
+sinfo -o "%.10N %.6t"
+
+# 刷新状态
+sinfo -r
+```
 
 ---
 
-## scontrol 命令
+## scontrol 命令详解
+
+`scontrol` 是 Slurm 控制器管理命令，用于查看和修改集群配置。
+
+### 8.1 基本用法
 
 ```bash
-# 查看节点详情
-scontrol show node localhost
-
-# 清除 drain 状态
-scontrol update NodeName=localhost State=IDLE
-
-# 查看分区
-scontrol show partition
-
-# 查看作业详情
-scontrol show job <JOB_ID>
-
-# 取消作业
-scancel <JOB_ID>
+scontrol show config      # 查看配置
+scontrol show node        # 查看所有节点
+scontrol show node <name> # 查看特定节点
+scontrol show partition   # 查看所有分区
+scontrol show job         # 查看所有作业
+scontrol show job <id>    # 查看特定作业
 ```
 
-### 关键字段说明
+### 8.2 查看节点详情
+
+```bash
+scontrol show node localhost
+```
+
+**输出示例（正常状态）：**
+```
+NodeName=localhost Arch=x86_64 CoresPerSocket=16
+CPUAlloc=0 CPUTot=64 CPULoad=5.79
+AvailableFeatures=(null) ActiveFeatures=(null)
+Gres=gpu:1
+NodeAddr=localhost NodeHostName=localhost Version=21.08.5
+OS=Linux 6.5.0-35-generic
+RealMemory=125000 AllocMem=0 FreeMem=509863
+Sockets=2 Boards=1 State=IDLE
+ThreadsPerCore=2 TmpDisk=0 Weight=1
+Partitions=gpu
+BootTime=2024-06-20T18:07:52
+SlurmdStartTime=2026-03-10T08:04:33
+LastBusyTime=2026-03-10T08:03:59
+```
+
+**输出示例（异常状态）：**
+```
+NodeName=localhost State=IDLE+DRAIN+INVALID_REG
+Reason=gres/gpu count reported lower than configured (0 < 1) [slurm@2026-03-10T08:04:33]
+```
+
+### 8.3 节点详情字段说明
+
 | 字段 | 说明 |
 |------|------|
-| State | 节点状态组合 |
+| NodeName | 节点名称 |
+| Arch | CPU 架构 |
+| CoresPerSocket | 每socket核心数 |
+| CPUAlloc | 已分配的CPU核心数 |
+| CPUTot | 总CPU核心数 |
+| RealMemory | 总内存 (MB) |
+| AllocMem | 已分配内存 (MB) |
+| FreeMem | 可用内存 (MB) |
+| Sockets | 物理CPU颗数 |
+| State | 节点状态（可能组合） |
+| Gres | 通用资源（如 gpu:1） |
+| NodeAddr | 节点地址 |
+| NodeHostName | 节点主机名 |
 | Reason | 状态原因（如有问题） |
 | LastBusyTime | 最后忙碌时间 |
 | SlurmdStartTime | slurmd 启动时间 |
+| Partitions | 所属分区 |
+
+### 8.4 常用操作
+
+```bash
+# 清除 drain 状态（最常用！）
+scontrol update NodeName=localhost State=IDLE
+
+# 设置节点下线
+scontrol update NodeName=localhost State=DOWN
+
+# 重置节点状态为UNKNOWN
+scontrol update NodeName=localhost State=UNKNOWN
+
+# 查看分区信息
+scontrol show partition
+
+# 查看分区详情
+scontrol show partition gpu
+
+# 查看作业详情
+scontrol show job 1
+
+# 重新排队作业
+scontrol requeue 1
+
+# 取消作业
+scancel 1
+
+# 挂起作业
+scontrol suspend 1
+
+# 恢复作业
+scontrol resume 1
+```
+
+### 8.5 查看配置
+
+```bash
+# 查看所有配置
+scontrol show config
+
+# 查看特定配置项
+scontrol show config | grep -i cluster
+scontrol show config | grep -i slurmd
+```
 
 ---
 
-## squeue 命令
+## squeue 命令详解
 
-### 任务状态
-| 状态 | 含义 |
+`squeue` 用于查看作业队列状态。
+
+### 9.1 基本用法
+
+```bash
+squeue                    # 查看所有作业
+squeue -u username        # 查看特定用户作业
+squeue -p gpu            # 查看特定分区作业
+squeue -l                # 详细显示
+squeue -t RUNNING        # 只看运行中的
+squeue -t PENDING        # 只看排队的
+squeue -j 1234           # 查看特定作业
+```
+
+### 9.2 输出格式
+
+```
+JOBID PARTITION NAME     USER ST TIME  NODES NODELIST
+1     gpu      eval-dee root PD 0:00  1     localhost
+```
+
+### 9.3 字段说明
+
+| 字段 | 说明 |
 |------|------|
-| PD | Pending，排队中 |
-| R | Running，运行中 |
-| CG | Completing，完成中 |
-| F | Failed，失败 |
-| CA | Cancelled，已取消 |
+| JOBID | 作业ID |
+| PARTITION | 分区 |
+| NAME | 作业名称 |
+| USER | 用户名 |
+| ST | 状态 |
+| TIME | 运行时间 |
+| NODES | 节点数 |
+| NODELIST | 分配的节点 |
+
+### 9.4 状态说明
+
+| 状态 | 含义 | 说明 |
+|------|------|------|
+| `PD` | Pending | 排队等待中 |
+| `R` | Running | 正在运行 |
+| `CG` | Completing | 正在完成 |
+| `F` | Failed | 失败 |
+| `CA` | Cancelled | 已取消 |
+| `TO` | Timeout | 超时 |
+| `NF` | Node Fail | 节点故障 |
+| `SE` | Special Exit | 特殊退出 |
+
+### 9.5 常用示例
+
+```bash
+# 查看我的所有作业
+squeue -u $USER
+
+# 只看运行中的
+squeue -t RUNNING
+
+# 只看排队的
+squeue -t PENDING
+
+# 详细输出
+squeue -l
+
+# 每秒刷新
+watch -n 1 squeue
+
+# 查看作业详情
+scontrol show job 1
+
+# 取消作业
+scancel 1
+
+# 取消所有我的作业
+scancel -u $USER
+
+# 强制取消
+scancel -9 1
+```
 
 ---
 
